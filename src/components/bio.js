@@ -5,7 +5,7 @@
  * See: https://www.gatsbyjs.com/docs/use-static-query/
  */
 
-import React from "react"
+import React, { useEffect } from "react"
 import { useStaticQuery, graphql } from "gatsby"
 import Image from "gatsby-image"
 
@@ -39,6 +39,16 @@ const Bio = () => {
 
   const avatar = data?.avatar?.childImageSharp?.fixed
 
+  useEffect(() => {
+    const script = document.createElement("script")
+    script.async = true
+    script.src = "https://platform.twitter.com/widgets.js"
+    document.head.appendChild(script)
+    return () => {
+      document.head.removeChild(script)
+    }
+  })
+
   return (
     <div className="bio">
       {avatar && (
@@ -55,9 +65,15 @@ const Bio = () => {
         <p>
           Written by <strong>{author.name}</strong> {author?.summary || null}
           {` `}
-          <a href={`https://twitter.com/${social?.twitter || ``}`}>
-            You should follow them on Twitter
-          </a>
+          {social?.twitter && (
+            <a
+              href={`https://twitter.com/${social?.twitter || ``}`}
+              className="twitter-follow-button"
+              data-show-count="false"
+            >
+              Follow @{social?.twitter}
+            </a>
+          )}
         </p>
       )}
     </div>
