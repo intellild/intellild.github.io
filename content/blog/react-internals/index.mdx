@@ -1,0 +1,134 @@
+---
+title: React Internals - the Beginning
+date: "2021-02-14"
+description: "
+  This is the beginning of React Internals series.
+  In this series, I'll talk about how React works.
+  In the first post, I'm going to talk about some concepts that are used in React but not limited to React.
+  This post will also be a stub of all React Internals blogs.
+"
+---
+
+This is the beginning of React Internals series. In this series, I'll talk about how React works.
+In the first post, I'm going to talk about some concepts that are used in React but not limited to React.
+
+This post will also be a stub of all React Internals blogs.
+* [React Internals](/react-internals)
+
+## Fiber
+React version 16 introduced the concept Fiber. Actually, it's an internal concept inside React, the user-land React code
+has no awareness of Fiber. Unfortunately, there's no precise definition of a Fiber. Wikipedia describes Fiber as cooperative
+threads, or coroutines. That's a correct but not good explanation, since people would keep asking about cooperative
+threads and coroutines.
+Fortunately, most front end developers are already using cooperative threads. That's async/await, with the event loop and
+Promises. The core concept of Fibers is yield the execution so other work can executed, then switch back at a suitable time.
+
+Unfortunately, Javascript hides all the low level details and there is no low level APIs for Javascript to touch the event
+loop. Thus React implements its own Fiber implementation, known as React Fiber.
+
+## Side Effect
+According to wikipedia:
+> In computer science, an operation, function or expression is said to have a side effect if it modifies some state
+> variable value(s) outside its local environment,
+> that is to say has an observable effect besides returning a value (the main effect) to the invoker of the operation.
+
+Side effects usually come with mutations. For example:
+```js
+let a = 0;
+function doSomething() {
+  a = 1; // this is a side effect
+}
+```
+However, some functions can be treated with pure functions, since it doesn't modify anything outside the local scope:
+```js
+function doSomething(obj) {
+  const result = {
+    ...obj
+  };
+  result.id++;
+  return result;
+}
+```
+
+### Why side effects are important?
+If an application is complex enough, we have to be aware of what a function with side effects affects all the time.
+Or the whole application would be messed. That's a huge holdback for development.
+
+For pure functions, we don't have to care about anything except the code we are working on, since we know the
+function won't affect anything else. Also, it is easy to test these functions, since we don't have to mock the environment
+it touches. We just care about what we give to the function and what it returns.
+
+## No side effect in render functions and function components
+Why? Remember that fibers can yield the execution. That means the work can be paused.
+I'm using generators for example:
+```js
+const state = {
+  type: 'dog',
+  food: 'dog food'
+};
+function* task(type) {
+  state.type = type;
+  yield;
+  switch (type) {
+    case 'cat':
+      state.food = 'cat food';
+      break;
+    case 'dog':
+      state.food = 'dog food';
+      break;
+  }
+}
+
+execute(task('cat'));
+```
+If the task is paused at the yield and someone else read the value, that guy would get an in-complete transition of the state.
+In this case, we serve our poor cat with dog's food.
+
+How to prevent the illed state problem? One easy way is to delay the mutation.
+```js
+const state = {
+  type: 'dog',
+  food: 'dog food'
+};
+function* task(type) {
+  state.type = type;
+  yield;
+  switch (type) {
+    case 'cat':
+      return 'cat food';
+    case 'dog':
+      return 'dog food';
+  }
+}
+```
+Now the `task` is a pure function. The only thing we need to do now is getting the returned value of `task` and modify
+the state in our executor and make sure the modification process can't be paused.
+
+## Side Effect and React
+In React, the update process is called 'reconcile'. A single render method of class component or a function component
+can't be paused since we never write it as a generator, but the update process of the component tree can be paused or
+event thrown away.
+
+Mutations to the DOM in React is treated as side effects. No DOM element would be modified until the whole update process
+is completed.
+
+Assume A and B are function components here:
+```jsx
+let a;
+
+<A>
+  <B />
+</A>
+```
+That means, when the reconciler finishes calling A with its returned virtual dom, the work can be paused.
+If we modified the global variable a in A's function body and reset it in B's function body, but unfortunately the update
+process is thrown away for some reason, for example, their parent component unmounts the sub tree before the update process
+finishes. Then the variable a is in illed state.
+
+That's why you should never write side effects in render functions.
+
+### What about hooks? These don't seem to be pure?
+Trust me, React hooks can be implemented as pure functions. If we implemented them as pure functions, that would be
+a disaster for Javascript.
+
+In this post, I introduced some common concept. In the next post, I'm going to talk React's internal implementation of Fibers.
