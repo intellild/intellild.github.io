@@ -1,0 +1,74 @@
+---
+title: React Internals - Fibers
+date: "2021-02-15"
+description: "
+React's implementation of Fiber.
+"
+---
+
+import { Link } from "gatsby"
+
+<Link to="/react-internals">Back to the stub</Link>
+
+<p />
+
+In the previous post, I introduced some basic concepts. In this post, I'm going to introduce React's implementation of Fiber.
+
+As the previous post says, we can't pause a function's rendering phase. But, which is controlled by React, the reconciliation
+among the component tree can be paused, although it is not enabled in the stable version React. Since the reconciliation
+process can be paused, we need a data structure to describe things we are working on. Class components have their instances,
+which can be used as the scheduled objects, but not all components have instances. Thus, we can't use class instances directly.
+
+React creates Fiber objects for every virtual DOM elements. That means there is a fiber tree of the same shape as the element tree.
+
+For such a component:
+```jsx
+function A() {
+  return <div>Hello</div>
+}
+```
+The fiber tree looks like:
+```jsx
+<Fiber type={A}>
+  <Fiber type={'div'}>
+    <Fiber type={Text} value={'Hello'} />
+  </Fiber>
+</Fiber>
+```
+During the reconciliation, React walks through the fiber and finds out differences, as the other virtual DOM implementations do.
+
+## Reconciliation Phases
+The reconciliation phases mean the phases start from an update scheduled (when a `setState` or `forceUpdate` is called)
+and end with committed to DOM. There are three
+phases:
+* Start
+* Complete
+* Commit
+
+### Start Phase
+The start phase is where render functions are called. Notice that this step assumes that everything is pure. React may
+suspend a start phase and resume it later, or throws away the work-in-progress update. Thus render functions should never
+have side effects. Virtual DOM diff happens in this phase. This phase can be considered pure because it doesn't modify
+anything out of scope. Notice that `componentWillReceiveProps`, `componentWillUpdate` and `componentWillMount` are called
+during this phase and these methods usually come with side effects. That's why React deprecated them.
+
+### Complete Phase
+A completion happens when a sub-tree has finished the start phase.
+In the first article, I introduced a method to perform side effects for concurrent works. During this phase, React
+calculates things that need to be modified and store them on the fiber tree.
+
+### Commit Phase
+When the whole tree has finished start phase and complete phase, it's time to commit side effects. For React, side effects
+includes DOM mutations, event listeners and lifecycle hooks such as `componentDidMount`, `componentDidUpdate`, `useEffect`.
+The commit phase won't be paused so all side effects can be called safely.
+
+## Twin Fibers
+Since reconciliation can be paused or thrown away, one fiber is not enough because it can be messed with incomplete works.
+Obviously, two fiber trees are needed:
+* One for the committed work, which essentially represents what users see
+* One for work-in-progress
+
+These fibers look like twins. They are the same if no update happens. Notice that they are lazily created if you are
+reading React's source code.
+
+This post describes the basic structure of React. The next post will talk about a big boss, the concurrency problem.
