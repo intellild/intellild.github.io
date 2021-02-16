@@ -1,0 +1,61 @@
+---
+title: React Internals - Concurrency Problem
+date: "2021-02-16"
+description: "
+  The concurrency problem is the most complex one of React.
+  Concurrency problems must be treated very carefully, or the app would be full of weird behaviors and bugs that are hard
+  to debug.
+"
+---
+
+import { Link } from "gatsby"
+
+<Link to="/react-internals">Back to the stub</Link>
+
+<p />
+
+In the previous post, I introduced the basic structure of React Fiber. Since React introduced concurrent rendering,
+the reconciliation must be implemented very carefully.
+
+Assuming we have such a tree:
+```jsx
+<A>
+  <B>
+    <C />
+  </B>
+</A>
+```
+When the user calls `setState` on component B, can we simply push the Fiber of component B onto the task queue?
+When I first looked at the implementation of React, I thought it would be fine. However, I was wrong.
+Think of the following scenarios:
+* An update is scheduled on the parent or child tree if we have a work-in-progress work.
+* An update is scheduled on the parent or child tree after we scheduled an update
+* The sub-tree is going to be unmounted by its parent while it is being reconciled
+
+When a task is scheduled for component B, we don't know if A or C also scheduled an update. If we simply start the virtual
+DOM diff work from component B, B could be updated with old props while A would be passing it with new props. It is similar
+for other scenarios. This is a concurrency safety problem and would lead to weird behaviors and bugs.
+
+Shall we check the parent tree and the child tree every time we call the `setState`? This would be a performance disaster
+with duplicated works. React's solution is checking the whole tree when the reconciliation starts. This seems to be slow
+but actually not at all, since we don't need to re-render the components that are not having updates and we can simply
+copy the result of the previous render.
+
+The whole picture becomes the following:
+1. Mark the sub-tree has an update
+2. Schedule a work for root, since we are checking the whole tree
+3. The reconciler starts to walk down the tree. If the current visited component doesn't have any updates, simply copy
+the previous result. Having no update means there is no pending `setState` and no new props. Notice that we are not copying
+things related to its children, since we don't know if there is anything to do with its children.
+4. Check child tree of the component. Then we have two path:
+* If all the children don't have an update, we have finished the reconciliation of the current component. This is called
+bailout in React.
+* If a child has updates, follow step 3.
+5. Once a sub-tree is all checked, `completeWork` is called for the root node of the sub-tree
+
+These processes will be repeated until the whole tree is finished. After the whole tree is finished, React starts the
+commit phase introduced in the previous post, including modifying DOM.
+
+This post I introduce the concurrency problem of concurrent rendering and the working process of React reconciler.
+However, it is not enough, since React introduced priorities. In the next post, I am going to talk about how React solves
+concurrent rendering with different priorities.
